@@ -2,7 +2,7 @@
 
 int main(int argc, char *argv[]) {
 
-  GstElement *pipeline, *source, *sink, *codec;
+  GstElement *pipeline, *source, *udpsink, *convert, *enc, *rtp;
   GstBus *bus;
   GstMessage *msg;
   GstStateChangeReturn ret;
@@ -12,27 +12,33 @@ int main(int argc, char *argv[]) {
 
   // Create Pipeline Elements
   source = gst_element_factory_make("v4l2src", "source");
-  codec = gst_element_factory_make("videoconvert", "codec");
-  sink = gst_element_factory_make("autovideosink", "sink");
+  convert = gst_element_factory_make("videoconvert", "convert");
+  enc = gst_element_factory_make("x264enc", "encoder");
+  rtp = gst_element_factory_make("rtph264pay", "rtp");
+  udpsink = gst_element_factory_make("udpsink", "udpsink");
 
   // Create the emepty pipeline
   pipeline = gst_pipeline_new("test-pipeline");
 
-  if (!pipeline || !source || !sink) {
+  if (!pipeline || !source || !udpsink || !convert || !enc || !rtp) {
     g_printerr("Not all elements could be created. \n");
     return -1;
   }
 
   // Build the pipeline
-  gst_bin_add_many(GST_BIN(pipeline), source, sink, codec, NULL);
-  if (gst_element_link(source, codec) != TRUE ||
-      gst_element_link(codec, sink) != TRUE) {
-    g_printerr("Emenets could not be linked.\n");
+  gst_bin_add_many(GST_BIN(pipeline), source, udpsink, convert, enc, rtp, NULL);
+  if (gst_element_link(source, convert) != TRUE ||
+      gst_element_link(convert, enc) != TRUE ||
+      gst_element_link(enc, rtp) != TRUE ||
+      gst_element_link(rtp, udpsink) != TRUE) {
+    g_printerr("Elements could not be linked.\n");
     gst_object_unref(pipeline);
     return -1;
   }
 
-  g_object_set(source, "brightness", 10, NULL);
+  // set properties for elements
+  g_object_set(enc, "bitrate", 500, "tune", 4, NULL);
+  g_object_set(udpsink, "host", "127.0.1.255","port", 5000, "tune", 4, NULL);
 
   /* Start Playing */
   ret = gst_element_set_state(pipeline, GST_STATE_PLAYING);
