@@ -23,10 +23,7 @@ pkg_check_modules(
   gstreamer-1.0)
 
 add_executable(main ${CMAKE_SOURCE_DIR}/src/main.c)
-add_executable(sink ${CMAKE_SOURCE_DIR}/src/sink.c)
 
 target_include_directories(main PRIVATE ${GSTLIBS_INCLUDE_DIRS})
-target_include_directories(sink PRIVATE ${GSTLIBS_INCLUDE_DIRS})
 
 target_link_libraries(main PRIVATE ${GSTLIBS_LIBRARIES})
-target_link_libraries(sink PRIVATE ${GSTLIBS_LIBRARIES})
