@@ -21,9 +21,10 @@ pkg_check_modules(
   gobject-2.0
   glib-2.0
   gstreamer-1.0)
+pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk4)
 
 add_executable(main ${CMAKE_SOURCE_DIR}/src/main.c)
 
 target_include_directories(main PRIVATE ${GSTLIBS_INCLUDE_DIRS})
 
-target_link_libraries(main PRIVATE ${GSTLIBS_LIBRARIES})
+target_link_libraries(main PRIVATE ${GSTLIBS_LIBRARIES} PkgConfig::GTK)
