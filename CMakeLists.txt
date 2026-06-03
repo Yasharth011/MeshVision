@@ -16,7 +16,7 @@ endif()
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GSTLIBS REQUIRED gobject-2.0 glib-2.0 gstreamer-1.0)
-pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk4)
+pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 
 add_library(view src/view.c)
 target_include_directories(view PUBLIC include ${GSTLIBS_INCLUDE_DIRS})
