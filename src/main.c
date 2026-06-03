@@ -1,8 +1,11 @@
-#include "glib.h"
-#include "gst/gstbus.h"
+#include "gst/gstclock.h"
 #include "gst/gstelement.h"
-#include "gst/gstutils.h"
+#include "gst/gstobject.h"
+#include <gio/gio.h>
+#include <glib.h>
 #include <gst/gst.h>
+#include <gtk/gtk.h>
+#include <view.h>
 
 GstElement *init_producer() {
   GstElement *pipeline, *source, *convert, *encoder, *rtp, *udpsink;
@@ -32,7 +35,7 @@ GstElement *init_producer() {
 
   // set props
   g_object_set(encoder, "bitrate", 500, "tune", 4, NULL);
-  g_object_set(udpsink, "host", "127.0.1.255", "port", 5000, NULL);
+  g_object_set(udpsink, "host", "127.0.1.1", "port", 5000, NULL);
 
   return pipeline;
 }
@@ -51,12 +54,11 @@ static void pad_added_handler(GstElement *element, GstPad *pad, gpointer data) {
   gst_object_unref(sinkpad);
 }
 
-GstElement *init_consumer() {
-  GstElement *pipeline, *udpsrc, *sink, *convert, *parser, *decoder, *rtp;
+GstElement *init_consumer(GstElement* sink) {
+  GstElement *pipeline, *udpsrc, *convert, *parser, *decoder, *rtp;
   GstCaps *udp_caps;
 
   // Create pipeline elements
-  sink = gst_element_factory_make("autovideosink", "sink");
   convert = gst_element_factory_make("videoconvert", "convert");
   parser = gst_element_factory_make("h264parse", "parser");
   rtp = gst_element_factory_make("rtph264depay", "rtp");
@@ -66,7 +68,7 @@ GstElement *init_consumer() {
   // Create the emepty pipeline
   pipeline = gst_pipeline_new("test-pipeline");
 
-  if (!pipeline || !udpsrc || !sink || !convert || !parser || !rtp ||
+  if (!pipeline || !udpsrc || !convert || !parser || !rtp ||
       !decoder) {
     g_printerr("Not all elements could be created. \n");
     return NULL;
@@ -121,18 +123,39 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg,
 
 int main(int argc, char *argv[]) {
 
-  GstElement *producer_pl, *consumer_pl;
+  GstElement *producer_pl, *consumer_pl, *consumer_sink;
   GstBus *producer_bus, *consumer_bus;
   GstMessage *msg;
   GstStateChangeReturn ret;
   GMainLoop *bus_loop;
+  GtkData gtk_data;
+  GtkApplication* app;
 
-  // Initialize GStreamer
+  // Initialize GStreamer & Gtk 
   gst_init(&argc, &argv);
+  gtk_init(&argc, &argv);
+
+  // set Gtk Data params 
+  memset(&gtk_data, 0, sizeof(gtk_data));
+  gtk_data.bus_loop = bus_loop;
+  gtk_data.pipeline = consumer_pl;
+  consumer_sink = init_gtksink(&gtk_data);
+  gtk_data.duration = GST_CLOCK_TIME_NONE;
 
   // Get the pipelines
   producer_pl = init_producer();
-  consumer_pl = init_consumer();
+  consumer_pl = init_consumer(consumer_sink);
+	
+  // Create bus for producer and consumer
+  producer_bus = gst_element_get_bus(producer_pl);
+  consumer_bus = gst_element_get_bus(consumer_pl);
+
+  // create the GUI
+  create_ui(&gtk_data);
+
+  // add gstreamer bus to producer and consumer 
+  gst_bus_add_watch(producer_bus, bus_callback, "Producer");
+  gst_bus_add_watch(consumer_bus, bus_callback, "Consumer");
 
   // Start Playing 
   ret = gst_element_set_state(producer_pl, GST_STATE_PLAYING);
@@ -148,24 +171,17 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  // Create bus for producer and consumer
-  producer_bus = gst_element_get_bus(producer_pl);
-  consumer_bus = gst_element_get_bus(consumer_pl);
-
-  gst_bus_add_watch(producer_bus, bus_callback, "Producer");
-  gst_bus_add_watch(consumer_bus, bus_callback, "Consumer");
-
-  // error event manager loop
-  bus_loop = g_main_loop_new(NULL, false);
-  g_main_loop_run(bus_loop);
+  gtk_main();
 
   // Free resource
   gst_object_unref(producer_bus);
   gst_object_unref(consumer_bus);
+  gst_object_unref(consumer_sink);
   gst_element_set_state(producer_pl, GST_STATE_NULL);
   gst_element_set_state(consumer_pl, GST_STATE_NULL);
   gst_object_unref(producer_pl);
   gst_object_unref(consumer_pl);
+  gst_object_unref(bus_loop);
 
   return 0;
 }
