@@ -22,8 +22,12 @@ add_library(view src/view.c)
 target_include_directories(view PUBLIC include ${GSTLIBS_INCLUDE_DIRS})
 target_link_libraries(view PUBLIC PkgConfig::GTK ${GSTLIBS_LIBRARIES})
 
+add_library(batman src/batman.c)
+target_include_directories(batman PUBLIC include ${GSTLIBS_INCLUDE_DIRS})
+target_link_libraries(batman PUBLIC ${GSTLIBS_LIBRARIES})
+
 add_executable(main ${CMAKE_SOURCE_DIR}/src/main.c)
 
-target_include_directories(main PRIVATE view ${GSTLIBS_INCLUDE_DIRS})
+target_include_directories(main PRIVATE view batman ${GSTLIBS_INCLUDE_DIRS})
 
-target_link_libraries(main PRIVATE view ${GSTLIBS_LIBRARIES} PkgConfig::GTK)
+target_link_libraries(main PRIVATE view batman ${GSTLIBS_LIBRARIES} PkgConfig::GTK)
