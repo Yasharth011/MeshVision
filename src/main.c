@@ -1,10 +1,16 @@
+#include "batman.h"
 #include "gst/gstclock.h"
 #include "gst/gstelement.h"
 #include "gst/gstobject.h"
+#include <arpa/inet.h>
+#include <batman.h>
 #include <gio/gio.h>
 #include <glib.h>
 #include <gst/gst.h>
 #include <gtk/gtk.h>
+#include <inttypes.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <view.h>
 
 GstElement *init_producer() {
@@ -15,7 +21,7 @@ GstElement *init_producer() {
   convert = gst_element_factory_make("videoconvert", "convert");
   encoder = gst_element_factory_make("x264enc", "encoder");
   rtp = gst_element_factory_make("rtph264pay", "rtp");
-  udpsink = gst_element_factory_make("udpsink", "udpsink");
+  udpsink = gst_element_factory_make("dynudpsink", "udpsink");
 
   // Create the empty pipeline
   pipeline = gst_pipeline_new("producer-pipeline");
@@ -35,7 +41,6 @@ GstElement *init_producer() {
 
   // set props
   g_object_set(encoder, "bitrate", 500, "tune", 4, NULL);
-  g_object_set(udpsink, "host", "127.0.1.1", "port", 5000, NULL);
 
   return pipeline;
 }
@@ -54,7 +59,7 @@ static void pad_added_handler(GstElement *element, GstPad *pad, gpointer data) {
   gst_object_unref(sinkpad);
 }
 
-GstElement *init_consumer(GstElement* sink) {
+GstElement *init_consumer(GstElement *sink) {
   GstElement *pipeline, *udpsrc, *convert, *parser, *decoder, *rtp;
   GstCaps *udp_caps;
 
@@ -68,8 +73,7 @@ GstElement *init_consumer(GstElement* sink) {
   // Create the emepty pipeline
   pipeline = gst_pipeline_new("test-pipeline");
 
-  if (!pipeline || !udpsrc || !convert || !parser || !rtp ||
-      !decoder) {
+  if (!pipeline || !udpsrc || !convert || !parser || !rtp || !decoder) {
     g_printerr("Not all elements could be created. \n");
     return NULL;
   }
@@ -97,8 +101,7 @@ GstElement *init_consumer(GstElement* sink) {
   return pipeline;
 }
 
-static gboolean bus_callback(GstBus *bus, GstMessage *msg,
-                                gpointer user_data) {
+static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer user_data) {
   const gchar *pipeline_name = (const gchar *)user_data;
 
   switch (GST_MESSAGE_TYPE(msg)) {
@@ -121,6 +124,39 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg,
   return TRUE;
 }
 
+static gboolean on_video_request(GIOChannel *source, GIOCondition condition,
+                                 gpointer data) {
+  GstElement *sink = (GstElement *)data;
+  int fd = g_io_channel_unix_get_fd(source);
+
+  char target_ip[256];
+  struct sockaddr_in client_addr;
+  socklen_t addr_len = sizeof(client_addr);
+
+  // Read the incoming UDP packet bytes
+  ssize_t bytes_read = recvfrom(fd, target_ip, sizeof(target_ip) - 1, 0,
+                                (struct sockaddr *)&client_addr, &addr_len);
+  if (bytes_read > 0) {
+    target_ip[bytes_read] = '\0'; // Enforce safe string null-termination
+    g_strstrip(target_ip);
+
+    // Retrieve the active viewers hash table attached to this GstElement object
+    GHashTable *active_viewers =
+        (GHashTable *)g_object_get_data(G_OBJECT(sink), "active-viewers-table");
+
+    if (active_viewers != NULL && strlen(target_ip) > 0) {
+      if (!g_hash_table_contains(active_viewers, target_ip)) {
+        g_signal_emit_by_name(sink, "add-client", target_ip, 5000, NULL);
+        g_hash_table_add(active_viewers, g_strdup(target_ip));
+      } else {
+        g_signal_emit_by_name(sink, "remove-client", target_ip, 5000, NULL);
+        g_hash_table_remove(active_viewers, target_ip);
+      }
+    }
+  }
+  return G_SOURCE_CONTINUE;
+}
+
 int main(int argc, char *argv[]) {
 
   GstElement *producer_pl, *consumer_pl, *consumer_sink;
@@ -129,23 +165,30 @@ int main(int argc, char *argv[]) {
   GstStateChangeReturn ret;
   GMainLoop *bus_loop;
   GtkData gtk_data;
-  GtkApplication* app;
+  GError *error;
+  GSocket *socket;
+  GSocketAddress *sock_addr;
+  GInetAddress *inet_addr;
+  char *local_ip;
 
-  // Initialize GStreamer & Gtk 
+  // Initialize GStreamer & Gtk
   gst_init(&argc, &argv);
   gtk_init(&argc, &argv);
 
-  // set Gtk Data params 
+  // get local ip addr
+  get_local_ip("bat0", local_ip);
+
+  // set Gtk Data params
   memset(&gtk_data, 0, sizeof(gtk_data));
   gtk_data.bus_loop = bus_loop;
   gtk_data.pipeline = consumer_pl;
   consumer_sink = init_gtksink(&gtk_data);
-  gtk_data.duration = GST_CLOCK_TIME_NONE;
+  gtk_data.local_ip = local_ip;
 
   // Get the pipelines
   producer_pl = init_producer();
   consumer_pl = init_consumer(consumer_sink);
-	
+
   // Create bus for producer and consumer
   producer_bus = gst_element_get_bus(producer_pl);
   consumer_bus = gst_element_get_bus(consumer_pl);
@@ -153,11 +196,34 @@ int main(int argc, char *argv[]) {
   // create the GUI
   create_ui(&gtk_data);
 
-  // add gstreamer bus to producer and consumer 
+  // add gstreamer bus to producer and consumer
   gst_bus_add_watch(producer_bus, bus_callback, "Producer");
   gst_bus_add_watch(consumer_bus, bus_callback, "Consumer");
 
-  // Start Playing 
+  // set-up video request listner
+  socket = g_socket_new(G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM,
+                        G_SOCKET_PROTOCOL_UDP, &error);
+  if (error != NULL) {
+    g_printerr("[Socket Error]: %s\n", error->message);
+    g_clear_error(&error);
+    return -1;
+  }
+  sock_addr = g_inet_socket_address_new_from_string("0.0.0.0", 6000);
+  g_socket_bind(socket, sock_addr, TRUE, &error);
+  if (error != NULL) {
+    g_printerr("[Socket Error]: %s\n", error->message);
+    g_clear_error(&error);
+    return -1;
+  }
+
+  int fd = g_socket_get_fd(socket);
+  GIOChannel *channel = g_io_channel_unix_new(fd);
+  g_io_add_watch(channel, G_IO_IN, (GIOFunc)on_video_request, consumer_sink);
+
+  // register function to check batman neighbours 
+  g_timeout_add_seconds(5, (GSourceFunc)refresh_ui, &gtk_data);
+
+  // Start Playing
   ret = gst_element_set_state(producer_pl, GST_STATE_PLAYING);
   if (ret == GST_STATE_CHANGE_FAILURE) {
     g_printerr("Unable to set the pipeline to the playing state");
