@@ -1,5 +1,6 @@
 #pragma once
 #include <glib.h>
+#include <netlink/netlink.h>
 
 #define MESH_MAX_NEIGHBORS 64
 
@@ -11,5 +12,7 @@ typedef struct {
 
 // Parses batman-adv originator data and resolves direct neighbor IPs.
 int fetch_mesh_neighbors(MeshNeighbor neighbors_out[]);
+
+int on_new_bat_node(struct nl_msg *msg, void *arg);
 
 int get_local_ip(const char *interface, char *ip);
