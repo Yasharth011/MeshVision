@@ -1,5 +1,4 @@
 #include "batman.h"
-#include "gst/gstclock.h"
 #include "gst/gstelement.h"
 #include "gst/gstobject.h"
 #include <arpa/inet.h>
@@ -10,6 +9,9 @@
 #include <gtk/gtk.h>
 #include <inttypes.h>
 #include <netinet/in.h>
+#include <netlink/genl/ctrl.h>
+#include <netlink/genl/genl.h>
+#include <netlink/netlink.h>
 #include <sys/socket.h>
 #include <view.h>
 
@@ -157,6 +159,21 @@ static gboolean on_video_request(GIOChannel *source, GIOCondition condition,
   return G_SOURCE_CONTINUE;
 }
 
+static gboolean your_glib_netlink_handler(GIOChannel *source,
+                                          GIOCondition condition,
+                                          gpointer user_data) {
+  struct nl_sock *nl_socket = (struct nl_sock *)user_data;
+
+  if (condition & G_IO_IN) {
+    int bytes_processed = nl_recvmsgs_default(nl_socket);
+    if (bytes_processed < 0) {
+      g_printerr(
+          "[Netlink Error] Failed to process incoming kernel messages.\n");
+    }
+  }
+  return G_SOURCE_CONTINUE;
+}
+
 int main(int argc, char *argv[]) {
 
   GstElement *producer_pl, *consumer_pl, *consumer_sink;
@@ -169,7 +186,11 @@ int main(int argc, char *argv[]) {
   GSocket *socket;
   GSocketAddress *sock_addr;
   GInetAddress *inet_addr;
+  GIOChannel *channel, *bat_channel;
   char *local_ip;
+  int neighbor_count;
+  MeshNeighbor neighbors[neighbor_count];
+  struct nl_sock *bat_socket;
 
   // Initialize GStreamer & Gtk
   gst_init(&argc, &argv);
@@ -196,6 +217,12 @@ int main(int argc, char *argv[]) {
   // create the GUI
   create_ui(&gtk_data);
 
+  // initialize the GUI buttons
+  neighbor_count = fetch_mesh_neighbors(neighbors);
+  for (int i = 0; i < neighbor_count; i++) {
+    add_button(&gtk_data, neighbors[i].ip);
+  }
+
   // add gstreamer bus to producer and consumer
   gst_bus_add_watch(producer_bus, bus_callback, "Producer");
   gst_bus_add_watch(consumer_bus, bus_callback, "Consumer");
@@ -217,11 +244,20 @@ int main(int argc, char *argv[]) {
   }
 
   int fd = g_socket_get_fd(socket);
-  GIOChannel *channel = g_io_channel_unix_new(fd);
+  channel = g_io_channel_unix_new(fd);
   g_io_add_watch(channel, G_IO_IN, (GIOFunc)on_video_request, consumer_sink);
 
-  // register function to check batman neighbours 
-  g_timeout_add_seconds(5, (GSourceFunc)refresh_ui, &gtk_data);
+  // set-up new batman nodes listener
+  bat_socket = nl_socket_alloc();
+  genl_connect(bat_socket);
+  int family_id = genl_ctrl_resolve(bat_socket, "batadv");
+  int group_id = genl_ctrl_resolve_grp(bat_socket, "batadv", "tq_changes");
+  nl_socket_add_membership(bat_socket, group_id);
+  nl_socket_modify_cb(bat_socket, NL_CB_VALID, NL_CB_CUSTOM, on_new_bat_node,
+                      &gtk_data);
+  int bat_fd = nl_socket_get_fd(bat_socket);
+  bat_channel = g_io_channel_unix_new(fd);
+  g_io_add_watch(channel, G_IO_IN, (GIOFunc)your_glib_netlink_handler, socket);
 
   // Start Playing
   ret = gst_element_set_state(producer_pl, GST_STATE_PLAYING);
