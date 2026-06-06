@@ -15,4 +15,4 @@ GstElement *init_gtksink(GtkData *data);
 
 void create_ui(GtkData *data);
 
-gboolean refresh_ui(GtkData *data);
+void add_button(GtkData *data, char dest_ip[64]);

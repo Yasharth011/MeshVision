@@ -94,7 +94,7 @@ static void on_button_click(GtkButton *button, GtkData *data) {
   g_object_unref(error);
 }
 
-static void add_button(GtkData *data, char dest_ip[64]) {
+void add_button(GtkData *data, char dest_ip[64]) {
   GtkWidget *button;
   button = gtk_button_new();
 
@@ -107,16 +107,4 @@ static void add_button(GtkData *data, char dest_ip[64]) {
                    data);
 
   gtk_box_pack_start(GTK_BOX(data->controls_widget), button, FALSE, FALSE, 2);
-}
-
-gboolean refresh_ui(GtkData *data) {
-  int neighbor_count;
-  MeshNeighbor neighbors[neighbor_count];
-
-  neighbor_count = fetch_mesh_neighbors(neighbors);
-
-  for (int i = 0; i < neighbor_count; i++) {
-    add_button(data, neighbors[i].ip);
-  }
-  return TRUE;
 }
