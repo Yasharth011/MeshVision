@@ -182,13 +182,13 @@ int main(int argc, char *argv[]) {
   GstStateChangeReturn ret;
   GMainLoop *bus_loop;
   GtkData gtk_data;
-  GError *error;
+  GError *error=NULL;
   GSocket *socket;
   GSocketAddress *sock_addr;
   GInetAddress *inet_addr;
   GIOChannel *channel, *bat_channel;
   char *local_ip;
-  int neighbor_count;
+  int neighbor_count=MESH_MAX_NEIGHBORS;
   MeshNeighbor neighbors[neighbor_count];
   struct nl_sock *bat_socket;
 
