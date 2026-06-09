@@ -159,9 +159,8 @@ static gboolean on_video_request(GIOChannel *source, GIOCondition condition,
   return G_SOURCE_CONTINUE;
 }
 
-static gboolean your_glib_netlink_handler(GIOChannel *source,
-                                          GIOCondition condition,
-                                          gpointer user_data) {
+static gboolean glib_netlink_handler(GIOChannel *source, GIOCondition condition,
+                                     gpointer user_data) {
   struct nl_sock *nl_socket = (struct nl_sock *)user_data;
 
   if (condition & G_IO_IN) {
@@ -182,14 +181,14 @@ int main(int argc, char *argv[]) {
   GstStateChangeReturn ret;
   GMainLoop *bus_loop;
   GtkData gtk_data;
-  GError *error=NULL;
+  GError *error = NULL;
   GSocket *socket;
   GSocketAddress *sock_addr;
   GInetAddress *inet_addr;
   GIOChannel *channel, *bat_channel;
   char *local_ip;
-  int neighbor_count=MESH_MAX_NEIGHBORS;
-  MeshNeighbor neighbors[neighbor_count];
+  int neighbor_count = 0;
+  MeshNeighbor neighbors[MESH_MAX_NEIGHBORS];
   struct nl_sock *bat_socket;
 
   // Initialize GStreamer & Gtk
@@ -242,7 +241,6 @@ int main(int argc, char *argv[]) {
     g_clear_error(&error);
     return -1;
   }
-
   int fd = g_socket_get_fd(socket);
   channel = g_io_channel_unix_new(fd);
   g_io_add_watch(channel, G_IO_IN, (GIOFunc)on_video_request, consumer_sink);
@@ -257,7 +255,7 @@ int main(int argc, char *argv[]) {
                       &gtk_data);
   int bat_fd = nl_socket_get_fd(bat_socket);
   bat_channel = g_io_channel_unix_new(fd);
-  g_io_add_watch(channel, G_IO_IN, (GIOFunc)your_glib_netlink_handler, socket);
+  g_io_add_watch(channel, G_IO_IN, (GIOFunc)glib_netlink_handler, socket);
 
   // Start Playing
   ret = gst_element_set_state(producer_pl, GST_STATE_PLAYING);
