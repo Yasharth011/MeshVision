@@ -19,7 +19,7 @@ fi
 install_packages() {
     echo "Installing required packages..."
     apt update
-    apt install -y batctl wireless-tools iw net-tools iproute2
+    apt install -y batctl wireless-tools iw net-tools iproute2 avahi-autoipd
     echo "Packages installed successfully"
 }
 
@@ -54,7 +54,6 @@ setup_wireless() {
     ip link set wlan0 down
     iwconfig wlan0 mode ad-hoc
     iwconfig wlan0 essid "meshnet"
-    iwconfig wlan0 ap "02:12:34:56:78:9A"
     iwconfig wlan0 channel 1
     ip link set wlan0 up
     
@@ -70,9 +69,14 @@ setup_batman() {
     
     # Add wireless interface to batman-adv
     batctl if add wlan0
-    
+
+    # setting bat0 mac address 
+    WLAN_MAC = $(cat /sys/class/net/wlan0/address)
+    ip link set dev bat0 address $WLAN_MAC
+
     # Bring up bat0 interface
     ip link set up dev bat0
+    sleep 2
     
     echo "Batman-adv setup complete"
 }
@@ -80,19 +84,33 @@ setup_batman() {
 # Function to configure IP address
 configure_ip() {
     echo "Configuring IP address..."
+
+    # Kill any existing avahi-autoipd instance
+    pkill avahi-autoipd || true
+    sleep 1
+
+    # Make sure bat0 is up
+    ip link set up dev bat0
+    sleep 2
+
+    # Try avahi-autoipd first
+    echo "Trying avahi-autoipd for automatic IP assignment..."
+    avahi-autoipd --daemonize --wait bat0
+    sleep 5
+
+    # Check if IP was assigned
+    IP=$(ip addr show bat0 | grep "inet 169" | awk '{print $2}')
     
-    # Get node number from user
-    read -p "Enter node number (1, 2, 3, etc.): " node_num
-    
-    if [[ ! "$node_num" =~ ^[0-9]+$ ]]; then
-        echo "Invalid node number. Using 1 as default."
-        node_num=1
+    if [ -z "$IP" ]; then
+        echo "Avahi failed, assigning random fallback IP..."
+        # Generate random last octet to avoid conflicts between nodes
+        RANDOM_IP=$((RANDOM % 253 + 1))
+        ip addr add 169.254.1.$RANDOM_IP/16 dev bat0
+        IP="169.254.1.$RANDOM_IP/16"
     fi
-    
-    # Configure IP address
-    ip addr add 192.168.1.$node_num/24 dev bat0
-    
-    echo "IP address configured: 192.168.1.$node_num"
+
+    echo "IP address configured: $IP"
+    ip addr show bat0 | grep inet
 }
 
 # Function to setup internet sharing (optional)
@@ -126,11 +144,28 @@ create_startup_script() {
 
 # Start Batman-adv mesh network
 modprobe batman-adv
+ip link set wlan0 down
+iwconfig wlan0 mode ad-hoc
+iwconfig wlan0 essid "meshnet"
+iwconfig wlan0 ap "02:12:34:56:78:9A"
+iwconfig wlan0 channel 1
+ip link set wlan0 up
+sleep 2
 batctl if add wlan0
 ip link set up dev bat0
+sleep 2
 
-# Configure IP (change node number as needed)
-ip addr add 192.168.1.1/24 dev bat0
+# Try avahi first
+pkill avahi-autoipd || true
+avahi-autoipd --daemonize --wait bat0
+sleep 5
+
+# Check if IP assigned, fallback to random if not
+IP=$(ip addr show bat0 | grep "inet 169" | awk '{print $2}')
+if [ -z "$IP" ]; then
+    RANDOM_IP=$((RANDOM % 253 + 1))
+    ip addr add 169.254.1.$RANDOM_IP/16 dev bat0
+fi
 
 # Enable IP forwarding
 echo 1 > /proc/sys/net/ipv4/ip_forward
@@ -187,38 +222,22 @@ show_status() {
     ip addr show bat0
     
     echo ""
-    echo "Test connectivity with: ping 192.168.1.1"
+    echo "Your node IP address:"
+    ip addr show bat0 | grep "inet 169" | awk '{print $2}'
 }
 
 # Main execution
 main() {
     echo "Starting Batman-adv mesh network setup..."
     
-    # Install packages
     install_packages
-    
-    # Stop conflicting services
     stop_services
-    
-    # Setup wireless interface
     setup_wireless
-    
-    # Setup batman-adv
     setup_batman
-    
-    # Configure IP address
     configure_ip
-    
-    # Setup internet sharing
     setup_internet_sharing
-    
-    # Create startup script
     create_startup_script
-    
-    # Create systemd service
     create_systemd_service
-    
-    # Show status
     show_status
     
     echo ""
@@ -226,13 +245,14 @@ main() {
     echo "Your mesh network is now configured!"
     echo ""
     echo "Useful commands:"
-    echo "  Check neighbors: sudo batctl o"
-    echo "  View routing: sudo batctl r"
-    echo "  Monitor traffic: sudo tcpdump -i bat0"
-    echo "  Restart mesh: sudo systemctl restart mesh-network.service"
+    echo "  Check your IP:      ip addr show bat0"
+    echo "  Check neighbors:    sudo batctl o"
+    echo "  View routing:       sudo batctl r"
+    echo "  Monitor traffic:    sudo tcpdump -i bat0"
+    echo "  Restart mesh:       sudo systemctl restart mesh-network.service"
     echo ""
-    echo "For additional nodes, run this script and use different node numbers."
+    echo "For additional nodes, just run this script on each Pi!"
 }
 
 # Run main function
-main 
+main
