@@ -7,7 +7,7 @@
 typedef struct {
   char mac[18];
   char ip[64];
-  int link_quality; // TQ value (0-255)
+  int tq; // TQ value (0-255)
 } MeshNeighbor;
 
 // Parses batman-adv originator data and resolves direct neighbor IPs.

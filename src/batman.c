@@ -22,7 +22,7 @@ static gboolean resolve_ip_from_arp(const char *mac_addr, char *ip_out,
   char line[256];
   gboolean found = FALSE;
 
-  // Skip the header line ("IP address       HW type     Flags...")
+  // Skip the header line
   if (!fgets(line, sizeof(line), arp_file)) {
     fclose(arp_file);
     return FALSE;
@@ -37,7 +37,6 @@ static gboolean resolve_ip_from_arp(const char *mac_addr, char *ip_out,
       continue;
     }
 
-    // Case-insensitive comparison of the MAC address
     if (g_ascii_strcasecmp(hw_addr, mac_addr) == 0) {
       g_strlcpy(ip_out, ip, ip_buf_len);
       found = TRUE;
@@ -50,80 +49,79 @@ static gboolean resolve_ip_from_arp(const char *mac_addr, char *ip_out,
 }
 
 int fetch_mesh_neighbors(MeshNeighbor neighbors_out[]) {
-    FILE *fp;
-    char line[256];
-    int count = 0;
+  FILE *fp;
+  char line[256];
+  int count = 0;
 
-    fp = popen("batctl o", "r"); 
-    if (fp == NULL) {
-        perror("Failed to execute batctl command");
-        return 0;
+  fp = popen("sudo batctl o", "r");
+  if (fp == NULL) {
+    perror("Failed to execute batctl command");
+    return 0;
+  }
+
+  int line_index = 0;
+  while (fgets(line, sizeof(line), fp) != NULL) {
+
+    line_index++;
+
+    if (line_index <= 2)
+      continue; // Skip header lines safely
+
+    char orig_mac[18] = {0};
+    char nexthop_mac[18] = {0};
+    int tq = 0;
+    char token1[32] = {0};
+    char token2[32] = {0};
+    char token3[32] = {0};
+    char token4[32] = {0};
+
+    int tokens = sscanf(line, "%31s %31s %31s %31s %17s", token1, token2,
+                        token3, token4, nexthop_mac);
+
+    if (tokens < 4)
+      continue;
+
+    char *mac_ptr = token1;
+    char *tq_ptr = token3;
+
+    if (strcmp(token1, "*") == 0) {
+      mac_ptr = token2;
+      tq_ptr = token4;
     }
 
-    int line_index = 0;
-    while (fgets(line, sizeof(line), fp) != NULL) {
-        line_index++;
-        if (line_index <= 2) continue; // Skip header lines safely
+    if (strlen(mac_ptr) == 17 && mac_ptr[2] == ':') {
+      g_strlcpy(orig_mac, mac_ptr, sizeof(orig_mac));
 
-        char orig_mac[18] = {0};
-        char nexthop_mac[18] = {0};
-        int tq = 0;
-        char token1[32] = {0};
-        char token2[32] = {0};
-        char token3[32] = {0};
-        char token4[32] = {0};
+      char *clean_tq = g_strdelimit(tq_ptr, "()", ' ');
+      g_strstrip(clean_tq);
+      tq = atoi(clean_tq);
 
-        /* * Step 1: Break the raw line down into generic text blocks separated by whitespace.
-         * This naturally ignores how many spaces are inside columns or brackets!
-         */
-        int tokens = sscanf(line, "%31s %31s %31s %31s %31s", token1, token2, token3, token4, nexthop_mac);
+      if (tq == 0)
+        tq = 255;
 
-        if (tokens < 4) continue;
+      if (count >= MESH_MAX_NEIGHBORS)
+        break;
 
-        // Step 2: Handle the leading "*" route selection marker if it exists
-        char *mac_ptr = token1;
-        char *tq_ptr = token3;
-        
-        if (strcmp(token1, "*") == 0) {
-            mac_ptr = token2;   // The MAC address shifts to the second token block
-            tq_ptr = token4;    // The metric metric info shifts to the fourth token block
-        }
+      g_strlcpy(neighbors_out[count].mac, orig_mac,
+                sizeof(neighbors_out[count].mac));
+      neighbors_out[count].tq = tq;
 
-        // Step 3: Validate that the extracted token looks like a valid 17-char MAC address
-        if (strlen(mac_ptr) == 17 && mac_ptr[2] == ':') {
-            g_strlcpy(orig_mac, mac_ptr, sizeof(orig_mac));
-            
-            // Clean up parenthesis out of the TQ metric token string if present (e.g., "(245)" -> "245")
-            char *clean_tq = g_strdelimit(tq_ptr, "()", ' ');
-            g_strstrip(clean_tq);
-            tq = atoi(clean_tq);
+      if (!resolve_ip_from_arp(orig_mac, neighbors_out[count].ip,
+                               sizeof(neighbors_out[count].ip))) {
+        g_strlcpy(neighbors_out[count].ip, orig_mac,
+                  sizeof(neighbors_out[count].ip));
+      }
 
-            // Fallback default value if TQ parsing fails on B.A.T.M.A.N. V (which shows throughput metrics instead)
-            if (tq == 0) tq = 255; 
-
-            if (count >= MESH_MAX_NEIGHBORS) break;
-
-            // Pack parsed parameters safely into your output struct array 
-            g_strlcpy(neighbors_out[count].mac, orig_mac, sizeof(neighbors_out[count].mac));
-            neighbors_out[count].link_quality = tq;
-
-            // Attempt IP resolution via your internal local ARP routine cache 
-            if (!resolve_ip_from_arp(orig_mac, neighbors_out[count].ip, sizeof(neighbors_out[count].ip))) {
-                // FALLBACK: If ARP mapping is empty, use the MAC address as a placeholder IP string 
-                // so your GTK button creation loop doesn't receive a completely empty string parameter!
-                g_strlcpy(neighbors_out[count].ip, orig_mac, sizeof(neighbors_out[count].ip));
-            }
-
-            count++;
-        }
+      count++;
     }
+  }
 
-    pclose(fp);
-    return count; 
+  pclose(fp);
+  return count;
 }
 
 int on_new_bat_node(struct nl_msg *msg, void *arg) {
-  GtkData* gtk_data = (GtkData *) arg;
+  GtkData *gtk_data = (GtkData *)arg;
   MeshNeighbor *neighbor;
   struct nlmsghdr *nlh = nlmsg_hdr(msg);
 
@@ -146,11 +144,10 @@ int on_new_bat_node(struct nl_msg *msg, void *arg) {
   }
 
   if (attrs[BATADV_ATTR_TQ]) {
-    neighbor->link_quality = nla_get_u8(attrs[BATADV_ATTR_TQ]);
-    g_print("                Link Metric Quality (TQ): %d/255\n",
-            neighbor->link_quality);
+    neighbor->tq = nla_get_u8(attrs[BATADV_ATTR_TQ]);
+    g_print("                Link Metric Quality (TQ): %d/255\n", neighbor->tq);
   } else {
-    neighbor->link_quality = 0; // Default fallback if unavailable
+    neighbor->tq = 0; // Default fallback if unavailable
   }
 
   if (!resolve_ip_from_arp(neighbor->mac, neighbor->ip, sizeof(neighbor->ip))) {
