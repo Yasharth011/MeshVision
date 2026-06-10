@@ -71,7 +71,7 @@ setup_batman() {
     batctl if add wlan0
 
     # setting bat0 mac address 
-    WLAN_MAC = $(cat /sys/class/net/wlan0/address)
+    WLAN_MAC=$(cat /sys/class/net/wlan0/address)
     ip link set dev bat0 address $WLAN_MAC
 
     # Bring up bat0 interface
