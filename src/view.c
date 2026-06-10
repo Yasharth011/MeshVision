@@ -79,11 +79,9 @@ static void on_button_click(GtkButton *button, GtkData *data) {
   GSocketAddress *dest_addr =
       g_inet_socket_address_new_from_string(dest_ip, 6000);
 
-  char message[128];
-  g_snprintf(message, sizeof(message), "%s", data->local_ip);
-
   // Transmit the command string instantly over the mesh link
-  g_socket_send_to(socket, dest_addr, message, strlen(message), NULL, &error);
+  g_socket_send_to(socket, dest_addr, data->local_ip, sizeof(data->local_ip),
+                   NULL, &error);
   if (error != NULL) {
     g_printerr("[Socket Error]: %s\n", error->message);
     g_clear_error(&error);
