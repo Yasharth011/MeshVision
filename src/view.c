@@ -105,4 +105,6 @@ void add_button(GtkData *data, char dest_ip[64]) {
                    data);
 
   gtk_box_pack_start(GTK_BOX(data->controls_widget), button, FALSE, FALSE, 2);
+
+  gtk_widget_show(button);
 }
