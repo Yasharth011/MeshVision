@@ -169,7 +169,7 @@ int get_local_ip(const char *interface, char *ip) {
     if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
       if (strcmp(interface, ifa->ifa_name) == 0) {
         sa = (struct sockaddr_in *)ifa->ifa_addr;
-        ip = inet_ntoa(sa->sin_addr);
+	strcpy(ip, inet_ntoa(sa->sin_addr));
         freeifaddrs(ifap);
         return 1;
       }
