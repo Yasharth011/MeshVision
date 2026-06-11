@@ -122,7 +122,8 @@ int fetch_mesh_neighbors(MeshNeighbor neighbors_out[]) {
 
 int on_new_bat_node(struct nl_msg *msg, void *arg) {
   GtkData *gtk_data = (GtkData *)arg;
-  MeshNeighbor *neighbor;
+  MeshNeighbor *neighbor = g_new0(MeshNeighbor, 1);
+  ;
   struct nlmsghdr *nlh = nlmsg_hdr(msg);
 
   struct nlattr *attrs[BATADV_ATTR_MAX + 1];
@@ -157,6 +158,8 @@ int on_new_bat_node(struct nl_msg *msg, void *arg) {
 
   add_button(gtk_data, neighbor->ip);
 
+  g_free(neighbor);
+
   return NL_OK;
 }
 
@@ -169,7 +172,7 @@ int get_local_ip(const char *interface, char *ip) {
     if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
       if (strcmp(interface, ifa->ifa_name) == 0) {
         sa = (struct sockaddr_in *)ifa->ifa_addr;
-	strcpy(ip, inet_ntoa(sa->sin_addr));
+        strcpy(ip, inet_ntoa(sa->sin_addr));
         freeifaddrs(ifap);
         return 1;
       }
