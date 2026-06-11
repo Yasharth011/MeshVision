@@ -4,7 +4,9 @@
 #include <arpa/inet.h>
 #include <batman.h>
 #include <gio/gio.h>
+#include <glib-object.h>
 #include <glib.h>
+#include <glibconfig.h>
 #include <gst/gst.h>
 #include <gtk/gtk.h>
 #include <inttypes.h>
@@ -23,7 +25,7 @@ GstElement *init_producer() {
   convert = gst_element_factory_make("videoconvert", "convert");
   encoder = gst_element_factory_make("x264enc", "encoder");
   rtp = gst_element_factory_make("rtph264pay", "rtp");
-  udpsink = gst_element_factory_make("dynudpsink", "udpsink");
+  udpsink = gst_element_factory_make("multiudpsink", "udpsink");
 
   // Create the empty pipeline
   pipeline = gst_pipeline_new("producer-pipeline");
@@ -126,32 +128,45 @@ static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer user_data) {
   return TRUE;
 }
 
-static gboolean on_video_request(GIOChannel *source, GIOCondition condition,
+static gboolean on_video_request(GSocket *source, GIOCondition condition,
                                  gpointer data) {
   GstElement *sink = (GstElement *)data;
-  int fd = g_io_channel_unix_get_fd(source);
-
-  char target_ip[256];
+  GError *error = NULL;
+  char target_ip[256] = {0};
   struct sockaddr_in client_addr;
   socklen_t addr_len = sizeof(client_addr);
 
   // Read the incoming UDP packet bytes
-  ssize_t bytes_read = recvfrom(fd, target_ip, sizeof(target_ip) - 1, 0,
-                                (struct sockaddr *)&client_addr, &addr_len);
+  gssize bytes_read =
+      g_socket_receive(source, target_ip, sizeof(target_ip) - 1, NULL, &error);
+  if (error != NULL) {
+    g_printerr("[Socket] Error: %s\n", error->message);
+    g_clear_error(&error);
+    return G_SOURCE_CONTINUE;
+  }
+
   if (bytes_read > 0) {
     target_ip[bytes_read] = '\0'; // Enforce safe string null-termination
     g_strstrip(target_ip);
 
+    // Validate the payload for ip format
+    size_t ip_len = strlen(target_ip);
+    if (ip_len < 7 || ip_len > 15 || strchr(target_ip, '.') == NULL) {
+      g_printerr("[Warning]: Discarded malformed string data: '%s'\n",
+                 target_ip);
+      return G_SOURCE_CONTINUE;
+    }
+
     // Retrieve the active viewers hash table attached to this GstElement object
     GHashTable *active_viewers =
-        (GHashTable *)g_object_get_data(G_OBJECT(sink), "active-viewers-table");
+        (GHashTable *)g_object_get_data(G_OBJECT(sink), "active-viewers");
 
-    if (active_viewers != NULL && strlen(target_ip) > 0) {
+    if (active_viewers != NULL) {
       if (!g_hash_table_contains(active_viewers, target_ip)) {
-        g_signal_emit_by_name(sink, "add-client", target_ip, 5000, NULL);
+        g_signal_emit_by_name(sink, "add", target_ip, 5000, NULL);
         g_hash_table_add(active_viewers, g_strdup(target_ip));
       } else {
-        g_signal_emit_by_name(sink, "remove-client", target_ip, 5000, NULL);
+        g_signal_emit_by_name(sink, "remove", target_ip, 5000, NULL);
         g_hash_table_remove(active_viewers, target_ip);
       }
     }
@@ -175,28 +190,30 @@ static gboolean glib_netlink_handler(GIOChannel *source, GIOCondition condition,
 
 int main(int argc, char *argv[]) {
 
-  GstElement *producer_pl, *consumer_pl, *consumer_sink;
+  GstElement *producer_pl, *consumer_pl, *consumer_sink, *udp_sink;
   GstBus *producer_bus, *consumer_bus;
-  GstMessage *msg;
+  GHashTable *active_viewers;
   GstStateChangeReturn ret;
   GMainLoop *bus_loop;
   GtkData gtk_data;
   GError *error = NULL;
   GSocket *socket;
-  GSocketAddress *sock_addr;
-  GInetAddress *inet_addr;
-  GIOChannel *channel, *bat_channel;
-  char *local_ip;
+  GSource *socket_source;
+  struct nl_sock *bat_socket;
+  GIOChannel *bat_channel;
+  char local_ip[64] = {0};
   int neighbor_count = 0;
   MeshNeighbor neighbors[MESH_MAX_NEIGHBORS];
-  struct nl_sock *bat_socket;
 
   // Initialize GStreamer & Gtk
   gst_init(&argc, &argv);
   gtk_init(&argc, &argv);
 
   // get local ip addr
-  get_local_ip("bat0", local_ip);
+  if (!get_local_ip("bat0:avahi", local_ip)) {
+    g_printerr("Error: Could not get local ip");
+    return -1;
+  }
 
   // set Gtk Data params
   memset(&gtk_data, 0, sizeof(gtk_data));
@@ -208,6 +225,12 @@ int main(int argc, char *argv[]) {
   // Get the pipelines
   producer_pl = init_producer();
   consumer_pl = init_consumer(consumer_sink);
+
+  // Get producer udp sink
+  udp_sink = gst_bin_get_by_name(GST_BIN(producer_pl), "udpsink");
+  active_viewers = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+  g_object_set_data_full(G_OBJECT(udp_sink), "active-viewers", active_viewers,
+                         (GDestroyNotify)g_hash_table_destroy);
 
   // Create bus for producer and consumer
   producer_bus = gst_element_get_bus(producer_pl);
@@ -226,7 +249,7 @@ int main(int argc, char *argv[]) {
   gst_bus_add_watch(producer_bus, bus_callback, "Producer");
   gst_bus_add_watch(consumer_bus, bus_callback, "Consumer");
 
-  // set-up video request listner
+  /* set-up video request listner */
   socket = g_socket_new(G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM,
                         G_SOCKET_PROTOCOL_UDP, &error);
   if (error != NULL) {
@@ -234,18 +257,12 @@ int main(int argc, char *argv[]) {
     g_clear_error(&error);
     return -1;
   }
-  sock_addr = g_inet_socket_address_new_from_string("0.0.0.0", 6000);
-  g_socket_bind(socket, sock_addr, TRUE, &error);
-  if (error != NULL) {
-    g_printerr("[Socket Error]: %s\n", error->message);
-    g_clear_error(&error);
-    return -1;
-  }
-  int fd = g_socket_get_fd(socket);
-  channel = g_io_channel_unix_new(fd);
-  g_io_add_watch(channel, G_IO_IN, (GIOFunc)on_video_request, consumer_sink);
+  socket_source = g_socket_create_source(socket, G_IO_IN, NULL);
+  g_source_set_callback(socket_source, (GSourceFunc)on_video_request, udp_sink,
+                        NULL);
+  g_source_attach(socket_source, g_main_context_default());
 
-  // set-up new batman nodes listener
+  /* set-up new batman nodes listener */
   bat_socket = nl_socket_alloc();
   genl_connect(bat_socket);
   int family_id = genl_ctrl_resolve(bat_socket, "batadv");
@@ -254,26 +271,27 @@ int main(int argc, char *argv[]) {
   nl_socket_modify_cb(bat_socket, NL_CB_VALID, NL_CB_CUSTOM, on_new_bat_node,
                       &gtk_data);
   int bat_fd = nl_socket_get_fd(bat_socket);
-  bat_channel = g_io_channel_unix_new(fd);
-  g_io_add_watch(channel, G_IO_IN, (GIOFunc)glib_netlink_handler, socket);
+  bat_channel = g_io_channel_unix_new(bat_fd);
+  g_io_add_watch(bat_channel, G_IO_IN, (GIOFunc)glib_netlink_handler,
+                 bat_socket);
 
-  // Start Playing
+  /* Start Playing */
   ret = gst_element_set_state(producer_pl, GST_STATE_PLAYING);
   if (ret == GST_STATE_CHANGE_FAILURE) {
-    g_printerr("Unable to set the pipeline to the playing state");
+    g_printerr("Error: Unable to set the pipeline to the playing state");
     gst_object_unref(producer_pl);
     return -1;
   }
   ret = gst_element_set_state(consumer_pl, GST_STATE_PLAYING);
   if (ret == GST_STATE_CHANGE_FAILURE) {
-    g_printerr("Unable to set the pipeline to the playing state");
+    g_printerr("Error: Unable to set the pipeline to the playing state");
     gst_object_unref(consumer_pl);
     return -1;
   }
 
   gtk_main();
 
-  // Free resource
+  /* Free resource */
   gst_object_unref(producer_bus);
   gst_object_unref(consumer_bus);
   gst_object_unref(consumer_sink);
@@ -282,6 +300,10 @@ int main(int argc, char *argv[]) {
   gst_object_unref(producer_pl);
   gst_object_unref(consumer_pl);
   gst_object_unref(bus_loop);
+  g_object_unref(socket);
+  g_object_unref(socket_source);
+  g_object_unref(bat_socket);
+  g_object_unref(bat_channel);
 
   return 0;
 }
