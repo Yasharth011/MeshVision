@@ -1,6 +1,8 @@
 #include "batman.h"
+#include "gst/gstcaps.h"
 #include "gst/gstelement.h"
 #include "gst/gstobject.h"
+#include "gst/gstvalue.h"
 #include <arpa/inet.h>
 #include <batman.h>
 #include <gio/gio.h>
@@ -18,7 +20,8 @@
 #include <view.h>
 
 GstElement *init_producer() {
-  GstElement *pipeline, *source, *convert, *encoder, *rtp, *udpsink;
+  GstElement *pipeline, *source, *convert, *encoder, *rtp, *udpsink,
+      *capsfilter;
 
   // Create Pipeline Elements
   source = gst_element_factory_make("v4l2src", "source");
@@ -26,25 +29,31 @@ GstElement *init_producer() {
   encoder = gst_element_factory_make("x264enc", "encoder");
   rtp = gst_element_factory_make("rtph264pay", "rtp");
   udpsink = gst_element_factory_make("multiudpsink", "udpsink");
+  capsfilter = gst_element_factory_make("capsfilter", "capsfilter");
 
   // Create the empty pipeline
   pipeline = gst_pipeline_new("producer-pipeline");
 
-  if (!pipeline || !source || !udpsink || !convert || !encoder || !rtp) {
+  if (!pipeline || !source || !capsfilter || !udpsink || !convert || !encoder ||
+      !rtp) {
     g_printerr("Not all elements could be created. \n");
     return NULL;
   }
 
   // Build the pipeline
-  gst_bin_add_many(GST_BIN(pipeline), source, udpsink, convert, encoder, rtp,
-                   NULL);
-  if (!gst_element_link_many(source, convert, encoder, rtp, udpsink, NULL)) {
+  gst_bin_add_many(GST_BIN(pipeline), source, capsfilter, udpsink, convert,
+                   encoder, rtp, NULL);
+  if (!gst_element_link_many(source, capsfilter, convert, encoder, rtp, udpsink,
+                             NULL)) {
     g_printerr("Elements could not be linked");
     return NULL;
   }
 
   // set props
   g_object_set(encoder, "bitrate", 500, "tune", 4, NULL);
+  GstCaps *caps = gst_caps_new_simple(
+      "video/x-raw", "fromat", G_TYPE_STRING, "YUY2", "width", G_TYPE_INT, 640,
+      "height", G_TYPE_INT, 480, "framerate", GST_TYPE_FRACTION, 30, 1, NULL);
 
   return pipeline;
 }
@@ -104,7 +113,6 @@ GstElement *init_consumer(GstElement *sink) {
 
   return pipeline;
 }
-
 static gboolean bus_callback(GstBus *bus, GstMessage *msg, gpointer user_data) {
   const gchar *pipeline_name = (const gchar *)user_data;
 
@@ -199,6 +207,7 @@ int main(int argc, char *argv[]) {
   GError *error = NULL;
   GSocket *socket;
   GSource *socket_source;
+  GSocketAddress *socket_addr;
   struct nl_sock *bat_socket;
   GIOChannel *bat_channel;
   char local_ip[64] = {0};
@@ -257,6 +266,13 @@ int main(int argc, char *argv[]) {
     g_clear_error(&error);
     return -1;
   }
+  socket_addr = g_inet_socket_address_new_from_string("0.0.0.0", 6000); 
+  g_socket_bind(socket, socket_addr, TRUE, &error);
+  if(error!=NULL){
+	  g_printerr("[Socket Error] %s\n",error->message);
+	  g_clear_error(&error);
+	  return -1;
+  }
   socket_source = g_socket_create_source(socket, G_IO_IN, NULL);
   g_source_set_callback(socket_source, (GSourceFunc)on_video_request, udp_sink,
                         NULL);
@@ -294,7 +310,6 @@ int main(int argc, char *argv[]) {
   /* Free resource */
   gst_object_unref(producer_bus);
   gst_object_unref(consumer_bus);
-  gst_object_unref(consumer_sink);
   gst_element_set_state(producer_pl, GST_STATE_NULL);
   gst_element_set_state(consumer_pl, GST_STATE_NULL);
   gst_object_unref(producer_pl);
@@ -302,6 +317,7 @@ int main(int argc, char *argv[]) {
   gst_object_unref(bus_loop);
   g_object_unref(socket);
   g_object_unref(socket_source);
+  g_object_unref(socket_addr);
   g_object_unref(bat_socket);
   g_object_unref(bat_channel);
 
