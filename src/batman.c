@@ -34,13 +34,14 @@ static gboolean resolve_ip_from_mac(const char *mac_addr, char *ip_out,
     char token1[32] = {0};
     char token2[32] = {0};
     char token3[32] = {0};
+    char token4[32] = {0};
 
-    if (sscanf(line, "%31s %31s %31s", token1, token2, token3) >= 3) {
+    if (sscanf(line, "%31s %31s %31s %31s", token1, token2, token3, token4) >= 3) {
       char *ip_ptr = token1;
       char *mac_ptr = token2;
       if (strcmp(token1, "*") == 0) {
         ip_ptr = token2;
-        mac_ptr = token2;
+        mac_ptr = token3;
       }
       if (strlen(mac_ptr) == 17 && mac_ptr[2] == ':') {
         if (g_ascii_strcasecmp(mac_ptr, mac_addr) == 0) {
@@ -84,7 +85,7 @@ int fetch_mesh_neighbors(MeshNeighbor neighbors_out[]) {
     char token4[32] = {0};
 
     if (sscanf(line, "%31s %31s %31s %31s %17s", token1, token2, token3, token4,
-               nexthop_mac) >= 5) {
+               nexthop_mac) >= 4) {
       char *mac_ptr = token1;
       char *tq_ptr = token3;
 

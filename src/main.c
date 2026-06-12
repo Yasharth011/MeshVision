@@ -55,6 +55,7 @@ GstElement *init_producer() {
   GstCaps *caps = gst_caps_new_simple(
       "video/x-raw", "fromat", G_TYPE_STRING, "YUY2", "width", G_TYPE_INT, 640,
       "height", G_TYPE_INT, 480, "framerate", GST_TYPE_FRACTION, 30, 1, NULL);
+  g_object_set(capsfilter, "caps", caps, NULL);
 
   return pipeline;
 }
