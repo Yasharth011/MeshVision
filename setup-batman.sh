@@ -43,19 +43,20 @@ setup_wireless() {
     rfkill unblock all
     sleep 2
     
-    # Check if wlan0 exists
-    if ! ip link show wlan0 > /dev/null 2>&1; then
-        echo "Error: wlan0 interface not found"
-        echo "Please ensure your WiFi adapter is connected"
-        exit 1
-    fi
+    # ✔️ FIX: Block execution until wlan0 hardware directory structure exists
+    while [ ! -d "/sys/class/net/wlan0" ]; do
+        echo "Waiting for wlan0 hardware driver context to initialize..."
+        sleep 1
+    done
     
     # Configure wireless interface
     ip link set wlan0 down
+    sleep 0.5
     iwconfig wlan0 mode ad-hoc
     iwconfig wlan0 essid "meshnet"
     iwconfig wlan0 channel 1
     ip link set wlan0 up
+    sleep 0.5
     
     echo "Wireless interface configured"
 }
@@ -69,13 +70,16 @@ setup_batman() {
     
     # Add wireless interface to batman-adv
     batctl if add wlan0
+    sleep 0.5
 
-    # setting bat0 mac address 
+    # ✔️ FIX: Explicitly shut down bat0 before assigning the synced hardware MAC
+    ip link set dev bat0 down
     WLAN_MAC=$(cat /sys/class/net/wlan0/address)
+    echo "Synchronizing bat0 MAC target to hardware adapter value: $WLAN_MAC"
     ip link set dev bat0 address $WLAN_MAC
 
-    # Bring up bat0 interface
-    ip link set up dev bat0
+    # Bring up bat0 interface securely
+    ip link set dev bat0 up
     sleep 2
     
     echo "Batman-adv setup complete"
@@ -144,15 +148,34 @@ create_startup_script() {
 
 # Start Batman-adv mesh network
 modprobe batman-adv
+
+# ✔️ FIX: Wait for wireless card block to register inside kernel tables before continuing
+while [ ! -d "/sys/class/net/wlan0" ]; do
+    sleep 1
+done
+
+# Bring down interface to cleanly handle parameters alteration
 ip link set wlan0 down
+sleep 0.5
+
 iwconfig wlan0 mode ad-hoc
 iwconfig wlan0 essid "meshnet"
 iwconfig wlan0 ap "02:12:34:56:78:9A"
 iwconfig wlan0 channel 1
 ip link set wlan0 up
-sleep 2
+sleep 1
+
+# Bind interface into the mesh routing table
 batctl if add wlan0
-ip link set up dev bat0
+sleep 0.5
+
+# ✔️ FIX: Force down bat0 interface to sync MAC target addresses cleanly
+ip link set dev bat0 down
+WLAN_MAC=$(cat /sys/class/net/wlan0/address)
+ip link set dev bat0 address $WLAN_MAC
+
+# Wake mesh back up
+ip link set dev bat0 up
 sleep 2
 
 # Try avahi first
@@ -187,7 +210,9 @@ create_systemd_service() {
     cat > /etc/systemd/system/mesh-network.service << EOF
 [Unit]
 Description=Batman-adv Mesh Network
-After=network.target
+# ✔️ FIX: Tell systemd to wait explicitly until the network drivers pre-initialize
+After=network-pre.target
+Wants=network-pre.target
 
 [Service]
 Type=oneshot
@@ -198,6 +223,7 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
     
+    systemctl daemon-reload
     systemctl enable mesh-network.service
     echo "Systemd service created and enabled"
 }
