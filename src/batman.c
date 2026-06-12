@@ -12,7 +12,7 @@
 #include <sys/socket.h>
 #include <view.h>
 
-static gboolean resolve_ip_from_arp(const char *mac_addr, char *ip_out,
+static gboolean resolve_ip_from_mac(const char *mac_addr, char *ip_out,
                                     size_t ip_buf_len) {
   FILE *fp = popen("sudo batctl dc", "r");
   if (!fp) {
@@ -22,21 +22,32 @@ static gboolean resolve_ip_from_arp(const char *mac_addr, char *ip_out,
 
   char line[256];
   gboolean found = FALSE;
+  int line_index = 0;
 
   while (fgets(line, sizeof(line), fp)) {
-    char ip[64] = {0};
-    char via_token[16] = {0};
-    char hw_addr[18] = {0};
-    char dev_token[32] = {0};
-    char marker[2] = {0};
 
-    if (sscanf(line, " %1[* ] %63s %15s %17s %31s", marker, ip, via_token,
-               hw_addr, dev_token) >= 4) {
+    line_index++;
 
-      if (g_ascii_strcasecmp(hw_addr, mac_addr) == 0) {
-        g_strlcpy(ip_out, ip, ip_buf_len);
-        found = TRUE;
-        break;
+    if (line_index <= 3)
+      continue;
+
+    char token1[32] = {0};
+    char token2[32] = {0};
+    char token3[32] = {0};
+
+    if (sscanf(line, "%31s %31s %31s", token1, token2, token3) >= 3) {
+      char *ip_ptr = token1;
+      char *mac_ptr = token2;
+      if (strcmp(token1, "*") == 0) {
+        ip_ptr = token2;
+        mac_ptr = token2;
+      }
+      if (strlen(mac_ptr) == 17 && mac_ptr[2] == ':') {
+        if (g_ascii_strcasecmp(mac_ptr, mac_addr) == 0) {
+          g_strlcpy(ip_out, ip_ptr, ip_buf_len);
+          found = TRUE;
+          break;
+        }
       }
     }
   }
@@ -72,47 +83,42 @@ int fetch_mesh_neighbors(MeshNeighbor neighbors_out[]) {
     char token3[32] = {0};
     char token4[32] = {0};
 
-    int tokens = sscanf(line, "%31s %31s %31s %31s %17s", token1, token2,
-                        token3, token4, nexthop_mac);
+    if (sscanf(line, "%31s %31s %31s %31s %17s", token1, token2, token3, token4,
+               nexthop_mac) >= 5) {
+      char *mac_ptr = token1;
+      char *tq_ptr = token3;
 
-    if (tokens < 4)
-      continue;
-
-    char *mac_ptr = token1;
-    char *tq_ptr = token3;
-
-    if (strcmp(token1, "*") == 0) {
-      mac_ptr = token2;
-      tq_ptr = token4;
-    }
-
-    if (strlen(mac_ptr) == 17 && mac_ptr[2] == ':') {
-      g_strlcpy(orig_mac, mac_ptr, sizeof(orig_mac));
-
-      char *clean_tq = g_strdelimit(tq_ptr, "()", ' ');
-      g_strstrip(clean_tq);
-      tq = atoi(clean_tq);
-
-      if (tq == 0)
-        tq = 255;
-
-      if (count >= MESH_MAX_NEIGHBORS)
-        break;
-
-      g_strlcpy(neighbors_out[count].mac, orig_mac,
-                sizeof(neighbors_out[count].mac));
-      neighbors_out[count].tq = tq;
-
-      if (!resolve_ip_from_arp(orig_mac, neighbors_out[count].ip,
-                               sizeof(neighbors_out[count].ip))) {
-        g_strlcpy(neighbors_out[count].ip, orig_mac,
-                  sizeof(neighbors_out[count].ip));
+      if (strcmp(token1, "*") == 0) {
+        mac_ptr = token2;
+        tq_ptr = token4;
       }
 
-      count++;
+      if (strlen(mac_ptr) == 17 && mac_ptr[2] == ':') {
+        g_strlcpy(orig_mac, mac_ptr, sizeof(orig_mac));
+
+        char *clean_tq = g_strdelimit(tq_ptr, "()", ' ');
+        g_strstrip(clean_tq);
+        tq = atoi(clean_tq);
+
+        if (tq == 0)
+          tq = 255;
+
+        if (count >= MESH_MAX_NEIGHBORS)
+          break;
+
+        g_strlcpy(neighbors_out[count].mac, orig_mac,
+                  sizeof(neighbors_out[count].mac));
+        neighbors_out[count].tq = tq;
+
+        if (!resolve_ip_from_mac(orig_mac, neighbors_out[count].ip,
+                                 sizeof(neighbors_out[count].ip))) {
+          g_strlcpy(neighbors_out[count].ip, orig_mac,
+                    sizeof(neighbors_out[count].ip));
+        }
+        count++;
+      }
     }
   }
-
   pclose(fp);
   return count;
 }
