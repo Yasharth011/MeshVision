@@ -154,7 +154,7 @@ int on_new_bat_node(struct nl_msg *msg, void *arg) {
     neighbor->tq = 0; // Default fallback if unavailable
   }
 
-  if (!resolve_ip_from_arp(neighbor->mac, neighbor->ip, sizeof(neighbor->ip))) {
+  if (!resolve_ip_from_mac(neighbor->mac, neighbor->ip, sizeof(neighbor->ip))) {
     g_strlcpy(neighbor->ip, "IP_UNRESOLVED", sizeof(neighbor->ip));
     return NL_SKIP;
   }
