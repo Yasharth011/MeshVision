@@ -3,6 +3,7 @@
 #include "gst/gstelement.h"
 #include "gst/gstobject.h"
 #include "gst/gstvalue.h"
+#include "netlink/socket.h"
 #include <arpa/inet.h>
 #include <batman.h>
 #include <gio/gio.h>
@@ -202,7 +203,6 @@ int main(int argc, char *argv[]) {
   GstBus *producer_bus, *consumer_bus;
   GHashTable *active_viewers;
   GstStateChangeReturn ret;
-  GMainLoop *bus_loop;
   GtkData gtk_data;
   GError *error = NULL;
   GSocket *socket;
@@ -226,13 +226,13 @@ int main(int argc, char *argv[]) {
 
   // set Gtk Data params
   memset(&gtk_data, 0, sizeof(gtk_data));
-  gtk_data.bus_loop = bus_loop;
-  gtk_data.pipeline = consumer_pl;
-  consumer_sink = init_gtksink(&gtk_data);
+
   gtk_data.local_ip = local_ip;
 
   // Get the pipelines
   producer_pl = init_producer();
+
+  consumer_sink = init_gtksink(&gtk_data);
   consumer_pl = init_consumer(consumer_sink);
 
   // Get producer udp sink
@@ -240,6 +240,8 @@ int main(int argc, char *argv[]) {
   active_viewers = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
   g_object_set_data_full(G_OBJECT(udp_sink), "active-viewers", active_viewers,
                          (GDestroyNotify)g_hash_table_destroy);
+
+  gtk_data.pipeline = consumer_pl;
 
   // Create bus for producer and consumer
   producer_bus = gst_element_get_bus(producer_pl);
@@ -314,12 +316,11 @@ int main(int argc, char *argv[]) {
   gst_element_set_state(consumer_pl, GST_STATE_NULL);
   gst_object_unref(producer_pl);
   gst_object_unref(consumer_pl);
-  gst_object_unref(bus_loop);
   g_object_unref(socket);
-  g_object_unref(socket_source);
+  g_source_unref(socket_source);
   g_object_unref(socket_addr);
-  g_object_unref(bat_socket);
-  g_object_unref(bat_channel);
+  nl_socket_free(bat_socket);
+  g_io_channel_unref(bat_channel);
 
   return 0;
 }

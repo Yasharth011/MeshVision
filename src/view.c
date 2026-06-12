@@ -36,8 +36,8 @@ GstElement *init_gtksink(GtkData *data) {
 
 /* This function is called when the main window is closed */
 static void delete_event_cb(GtkWidget *widget, GdkEvent *event, GtkData *data) {
-  gst_element_set_state(data->pipeline, GST_STATE_READY);
-  g_main_loop_quit(data->bus_loop);
+  gst_element_set_state(data->pipeline, GST_STATE_NULL);
+  gtk_main_quit();
 }
 
 void create_ui(GtkData *data) {

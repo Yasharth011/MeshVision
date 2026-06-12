@@ -7,7 +7,6 @@ typedef struct _GtkData {
   GtkWidget *sink_widget;
   GtkWidget *controls_widget;
   GstElement *pipeline;
-  GMainLoop *bus_loop;
   const gchar *local_ip;
 } GtkData;
 
