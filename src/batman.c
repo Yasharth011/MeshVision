@@ -14,37 +14,34 @@
 
 static gboolean resolve_ip_from_arp(const char *mac_addr, char *ip_out,
                                     size_t ip_buf_len) {
-  FILE *arp_file = fopen("/proc/net/arp", "r");
-  if (!arp_file) {
+  FILE *fp = popen("sudo batctl dc", "r");
+  if (!fp) {
+    perror("Failed to execute batctl dc");
     return FALSE;
   }
 
   char line[256];
   gboolean found = FALSE;
 
-  // Skip the header line
-  if (!fgets(line, sizeof(line), arp_file)) {
-    fclose(arp_file);
-    return FALSE;
-  }
+  while (fgets(line, sizeof(line), fp)) {
+    char ip[64] = {0};
+    char via_token[16] = {0};
+    char hw_addr[18] = {0};
+    char dev_token[32] = {0};
+    char marker[2] = {0};
 
-  while (fgets(line, sizeof(line), arp_file)) {
-    char ip[64], hw_type[16], flags[16], hw_addr[18], mask[16], dev[32];
+    if (sscanf(line, " %1[* ] %63s %15s %17s %31s", marker, ip, via_token,
+               hw_addr, dev_token) >= 4) {
 
-    // Parse the standard Linux ARP table format
-    if (sscanf(line, "%63s %15s %15s %17s %15s %31s", ip, hw_type, flags,
-               hw_addr, mask, dev) != 6) {
-      continue;
-    }
-
-    if (g_ascii_strcasecmp(hw_addr, mac_addr) == 0) {
-      g_strlcpy(ip_out, ip, ip_buf_len);
-      found = TRUE;
-      break;
+      if (g_ascii_strcasecmp(hw_addr, mac_addr) == 0) {
+        g_strlcpy(ip_out, ip, ip_buf_len);
+        found = TRUE;
+        break;
+      }
     }
   }
 
-  fclose(arp_file);
+  pclose(fp);
   return found;
 }
 
