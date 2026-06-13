@@ -1,0 +1,12 @@
+[Unit]
+Description=Batman-adv Mesh Network
+After=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/start_mesh.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
