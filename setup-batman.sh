@@ -1,13 +1,10 @@
 #!/bin/bash
 
 # Batman-adv Mesh Network Setup Script
-# This script sets up a basic Batman-adv mesh network on Raspberry Pi
 
 set -e  # Exit on any error
 
-echo "=== Batman-adv Mesh Network Setup ==="
-echo "This script will configure your Raspberry Pi for mesh networking"
-echo ""
+echo "Batman-adv Mesh Network Setup"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
@@ -43,9 +40,8 @@ setup_wireless() {
     rfkill unblock all
     sleep 2
     
-    # ✔️ FIX: Block execution until wlan0 hardware directory structure exists
+    # Block execution until wlan0 hardware directory structure exists
     while [ ! -d "/sys/class/net/wlan0" ]; do
-        echo "Waiting for wlan0 hardware driver context to initialize..."
         sleep 1
     done
     
@@ -72,10 +68,9 @@ setup_batman() {
     batctl if add wlan0
     sleep 0.5
 
-    # ✔️ FIX: Explicitly shut down bat0 before assigning the synced hardware MAC
+    # set batman if mac as wlan mac
     ip link set dev bat0 down
     WLAN_MAC=$(cat /sys/class/net/wlan0/address)
-    echo "Synchronizing bat0 MAC target to hardware adapter value: $WLAN_MAC"
     ip link set dev bat0 address $WLAN_MAC
 
     # Bring up bat0 interface securely
@@ -98,7 +93,6 @@ configure_ip() {
     sleep 2
 
     # Try avahi-autoipd first
-    echo "Trying avahi-autoipd for automatic IP assignment..."
     avahi-autoipd --daemonize --wait bat0
     sleep 5
 
@@ -107,7 +101,6 @@ configure_ip() {
     
     if [ -z "$IP" ]; then
         echo "Avahi failed, assigning random fallback IP..."
-        # Generate random last octet to avoid conflicts between nodes
         RANDOM_IP=$((RANDOM % 253 + 1))
         ip addr add 169.254.1.$RANDOM_IP/16 dev bat0
         IP="169.254.1.$RANDOM_IP/16"
@@ -117,89 +110,13 @@ configure_ip() {
     ip addr show bat0 | grep inet
 }
 
-# Function to setup internet sharing (optional)
-setup_internet_sharing() {
-    echo ""
-    read -p "Do you want to enable internet sharing? (y/n): " enable_sharing
-    
-    if [[ "$enable_sharing" =~ ^[Yy]$ ]]; then
-        echo "Setting up internet sharing..."
-        
-        # Enable IP forwarding
-        echo 1 > /proc/sys/net/ipv4/ip_forward
-        
-        # Configure NAT
-        iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-        iptables -A FORWARD -i bat0 -o eth0 -j ACCEPT
-        iptables -A FORWARD -i eth0 -o bat0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-        
-        echo "Internet sharing enabled"
-    else
-        echo "Internet sharing disabled"
-    fi
-}
-
 # Function to create startup script
 create_startup_script() {
     echo "Creating startup script..."
     
-    cat > /usr/local/bin/start_mesh.sh << 'EOF'
-#!/bin/bash
-
-# Start Batman-adv mesh network
-modprobe batman-adv
-
-# ✔️ FIX: Wait for wireless card block to register inside kernel tables before continuing
-while [ ! -d "/sys/class/net/wlan0" ]; do
-    sleep 1
-done
-
-# Bring down interface to cleanly handle parameters alteration
-ip link set wlan0 down
-sleep 0.5
-
-iwconfig wlan0 mode ad-hoc
-iwconfig wlan0 essid "meshnet"
-iwconfig wlan0 ap "02:12:34:56:78:9A"
-iwconfig wlan0 channel 1
-ip link set wlan0 up
-sleep 1
-
-# Bind interface into the mesh routing table
-batctl if add wlan0
-sleep 0.5
-
-# ✔️ FIX: Force down bat0 interface to sync MAC target addresses cleanly
-ip link set dev bat0 down
-WLAN_MAC=$(cat /sys/class/net/wlan0/address)
-ip link set dev bat0 address $WLAN_MAC
-
-# Wake mesh back up
-ip link set dev bat0 up
-sleep 2
-
-# Try avahi first
-pkill avahi-autoipd || true
-avahi-autoipd --daemonize --wait bat0
-sleep 5
-
-# Check if IP assigned, fallback to random if not
-IP=$(ip addr show bat0 | grep "inet 169" | awk '{print $2}')
-if [ -z "$IP" ]; then
-    RANDOM_IP=$((RANDOM % 253 + 1))
-    ip addr add 169.254.1.$RANDOM_IP/16 dev bat0
-fi
-
-# Enable IP forwarding
-echo 1 > /proc/sys/net/ipv4/ip_forward
-
-# Configure NAT
-iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-iptables -A FORWARD -i bat0 -o eth0 -j ACCEPT
-iptables -A FORWARD -i eth0 -o bat0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-EOF
-    
+    cp start_mesh.sh /usr/local/bin/
     chmod +x /usr/local/bin/start_mesh.sh
+
     echo "Startup script created: /usr/local/bin/start_mesh.sh"
 }
 
@@ -207,49 +124,11 @@ EOF
 create_systemd_service() {
     echo "Creating systemd service..."
     
-    cat > /etc/systemd/system/mesh-network.service << EOF
-[Unit]
-Description=Batman-adv Mesh Network
-# ✔️ FIX: Tell systemd to wait explicitly until the network drivers pre-initialize
-After=network-pre.target
-Wants=network-pre.target
+    cp mesh-network.service /etc/systemd/system/mesh-network.service
 
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/start_mesh.sh
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
     systemctl daemon-reload
     systemctl enable mesh-network.service
     echo "Systemd service created and enabled"
-}
-
-# Function to display status
-show_status() {
-    echo ""
-    echo "=== Mesh Network Status ==="
-    echo "Wireless interface:"
-    iwconfig wlan0 | grep -E "(ESSID|Channel|Mode)"
-    
-    echo ""
-    echo "Batman-adv status:"
-    batctl if
-    
-    echo ""
-    echo "Mesh neighbors:"
-    batctl o
-    
-    echo ""
-    echo "Network interfaces:"
-    ip addr show bat0
-    
-    echo ""
-    echo "Your node IP address:"
-    ip addr show bat0 | grep "inet 169" | awk '{print $2}'
 }
 
 # Main execution
@@ -261,23 +140,10 @@ main() {
     setup_wireless
     setup_batman
     configure_ip
-    setup_internet_sharing
     create_startup_script
     create_systemd_service
-    show_status
     
-    echo ""
-    echo "=== Setup Complete ==="
-    echo "Your mesh network is now configured!"
-    echo ""
-    echo "Useful commands:"
-    echo "  Check your IP:      ip addr show bat0"
-    echo "  Check neighbors:    sudo batctl o"
-    echo "  View routing:       sudo batctl r"
-    echo "  Monitor traffic:    sudo tcpdump -i bat0"
-    echo "  Restart mesh:       sudo systemctl restart mesh-network.service"
-    echo ""
-    echo "For additional nodes, just run this script on each Pi!"
+    echo "mesh network is now configured!"
 }
 
 # Run main function
