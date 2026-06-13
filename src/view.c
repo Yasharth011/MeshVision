@@ -55,13 +55,14 @@ void create_ui(GtkData *data) {
 
   controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   data->controls_widget = controls;
+  gtk_widget_set_size_request(data->controls_widget, 180, 80);
 
   main_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_box_pack_start(GTK_BOX(main_box), main_hbox, TRUE, TRUE, 0);
   gtk_box_pack_start(GTK_BOX(main_box), controls, FALSE, FALSE, 0);
 
   gtk_container_add(GTK_CONTAINER(main_window), main_box);
-  gtk_window_set_default_size(GTK_WINDOW(main_window), 640, 480);
+  gtk_window_set_default_size(GTK_WINDOW(main_window), 800, 480);
 
   gtk_widget_show_all(main_window);
 }
