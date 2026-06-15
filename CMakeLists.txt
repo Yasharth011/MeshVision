@@ -27,8 +27,8 @@ add_library(batman src/batman.c)
 target_include_directories(batman PUBLIC include ${GSTLIBS_INCLUDE_DIRS} ${NL3_INCLUDE_DIRS})
 target_link_libraries(batman PUBLIC PkgConfig::GTK ${GSTLIBS_LIBRARIES} ${NL3_LIBRARIES})
 
-add_executable(main ${CMAKE_SOURCE_DIR}/src/main.c)
+add_executable(meshvision ${CMAKE_SOURCE_DIR}/src/main.c)
 
-target_include_directories(main PRIVATE view batman ${GSTLIBS_INCLUDE_DIRS} ${NL3_INCLUDE_DIRS})
+target_include_directories(meshvision PRIVATE view batman ${GSTLIBS_INCLUDE_DIRS} ${NL3_INCLUDE_DIRS})
 
-target_link_libraries(main PRIVATE view batman ${GSTLIBS_LIBRARIES} PkgConfig::GTK ${NL3_LIBRARIES})
+target_link_libraries(meshvision PRIVATE view batman ${GSTLIBS_LIBRARIES} PkgConfig::GTK ${NL3_LIBRARIES})
