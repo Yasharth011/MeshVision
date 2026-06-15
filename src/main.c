@@ -221,6 +221,10 @@ int main(int argc, char *argv[]) {
 
   // get local ip addr
   if (!get_local_ip("bat0:avahi", local_ip)) {
+    g_printerr("Error: Could not get interface bat0:avahi");
+  } else if(!get_local_ip("bat0", local_ip)) {
+    g_printerr("Error: Could not get interface bat0");
+  } else {
     g_printerr("Error: Could not get local ip");
     return -1;
   }
