@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=MeshVision
+Comment=Application for Mesh Based Video Streaming
+Exec=sudo -E /usr/local/bin/meshvision
+Terminal=false
+StartupNotify=true

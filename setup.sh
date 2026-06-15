@@ -140,6 +140,10 @@ build_application(){
 	# copy build to /usr/local
 	cp build/meshvision /usr/local/bin
 
+	# create auto-start app
+	mkdir -p ~/.config/autostart
+	cp meshvision.desktop ~/.config/autostart
+
 	echo "App built and copied to /usr/local/bin"
 }
 # Main execution
