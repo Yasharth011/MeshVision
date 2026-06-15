@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Tactical Mesh Video Interface
-Comment=Application for Mesh Based Video Streaming
-Exec=sudo -E /home/pi/MeshVision/build/main
-Terminal=false
-StartupNotify=true
