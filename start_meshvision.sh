@@ -51,5 +51,4 @@ iptables -A FORWARD -i bat0 -o eth0 -j ACCEPT
 iptables -A FORWARD -i eth0 -o bat0 -m state --state RELATED,ESTABLISHED -j ACCEPT
 
 # Run MeshVision app
-Run MeshVision app
 ./usr/local/bin/meshvision

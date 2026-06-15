@@ -114,25 +114,25 @@ configure_ip() {
 create_startup_script() {
     echo "Creating startup script..."
     
-    cp start_mesh.sh /usr/local/bin/
-    chmod +x /usr/local/bin/start_mesh.sh
+    cp start_meshvision.sh /usr/local/bin/
+    chmod +x /usr/local/bin/start_meshvision.sh
 
-    echo "Startup script created: /usr/local/bin/start_mesh.sh"
+    echo "Startup script created: /usr/local/bin/start_meshvision.sh"
 }
 
 # Function to create systemd service
 create_systemd_service() {
     echo "Creating systemd service..."
     
-    cp mesh-network.service /etc/systemd/system/mesh-network.service
+    cp meshvision.service /etc/systemd/system/meshvision.service
 
     systemctl daemon-reload
-    systemctl enable mesh-network.service
+    systemctl enable meshvision.service
     echo "Systemd service created and enabled"
 }
 
 # Function to build the application 
-build_applicaiton(){
+build_application(){
 	echo "Building app using cmake"
 	cmake -B build -S .
 	cmake --build build
