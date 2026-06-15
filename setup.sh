@@ -140,7 +140,7 @@ build_application(){
 	# copy build to /usr/local
 	cp build/meshvision /usr/local/bin
 
-	echo "App built and copy to /usr/local/bin"
+	echo "App built and copied to /usr/local/bin"
 }
 # Main execution
 main() {
