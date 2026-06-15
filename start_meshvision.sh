@@ -28,7 +28,7 @@ ip link set dev bat0 address $WLAN_MAC
 
 # Wake mesh back up
 ip link set dev bat0 up
-sleep 2
+sleep 5
 
 # Try avahi first
 pkill avahi-autoipd || true

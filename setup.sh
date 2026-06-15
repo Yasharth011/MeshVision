@@ -140,9 +140,13 @@ build_application(){
 	# copy build to /usr/local
 	cp build/meshvision /usr/local/bin
 
-	# create auto-start app
-	mkdir -p ~/.config/autostart
-	cp meshvision.desktop ~/.config/autostart
+	# create auto-start app in the correct user directory
+	user=${SUDO_USER:-pi}
+	mkdir -p "/home/$user/.config/autostart"
+	cp meshvision.desktop "/home/$user/.config/autostart"
+	
+	# Fix the permissions so the desktop environment can actually read the file!
+	chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config/autostart"
 
 	echo "App built and copied to /usr/local/bin"
 }

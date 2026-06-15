@@ -1,7 +1,6 @@
 [Unit]
 Description=Batman-adv Mesh Network
-After=network-pre.target
-Wants=network-pre.target
+After=network.target
 
 [Service]
 Type=oneshot
