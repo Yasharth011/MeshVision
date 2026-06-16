@@ -145,9 +145,6 @@ build_application(){
 	mkdir -p "/home/$user/.config/autostart"
 	cp meshvision.desktop "/home/$user/.config/autostart"
 	
-	# Fix the permissions so the desktop environment can actually read the file!
-	chown -R $REAL_USER:$REAL_USER "$USER_HOME/.config/autostart"
-
 	echo "App built and copied to /usr/local/bin"
 }
 # Main execution
