@@ -220,10 +220,10 @@ int main(int argc, char *argv[]) {
   gtk_init(&argc, &argv);
 
   // get local ip addr
-  if (!get_local_ip("bat0:avahi", local_ip)) {
-    g_printerr("Error: Could not get interface bat0:avahi\n");
-  } else if(!get_local_ip("bat0", local_ip)) {
-    g_printerr("Error: Could not get interface bat0\n");
+  if (get_local_ip("bat0:avahi", local_ip)) {
+    g_printerr("Local IP of interface bat0:avahi : %s",local_ip);
+  } else if(get_local_ip("bat0", local_ip)) {
+    g_printerr("Local IP of interface bat0 : %s",local_ip);
   } else {
     g_printerr("Error: Could not get local ip\n");
     return -1;
