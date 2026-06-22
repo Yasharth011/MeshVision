@@ -114,10 +114,10 @@ configure_ip() {
 create_startup_script() {
     echo "Creating startup script..."
     
-    cp start_meshvision.sh /usr/local/bin/
-    chmod +x /usr/local/bin/start_meshvision.sh
+    cp meshvision.sh /usr/local/bin/
+    chmod +x /usr/local/bin/meshvision.sh
 
-    echo "Startup script created: /usr/local/bin/start_meshvision.sh"
+    echo "Startup script created: /usr/local/bin/meshvision.sh"
 }
 
 # Function to create systemd service
