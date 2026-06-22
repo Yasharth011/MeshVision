@@ -221,11 +221,11 @@ int main(int argc, char *argv[]) {
 
   // get local ip addr
   if (get_local_ip("bat0:avahi", local_ip)) {
-    g_printerr("Local IP of interface bat0:avahi : %s\n",local_ip);
+    g_print("Local IP of interface bat0:avahi : %s\n",local_ip);
   } else if(get_local_ip("bat0", local_ip)) {
-    g_printerr("Local IP of interface bat0 : %s\n",local_ip);
+    g_print("Local IP of interface bat0 : %s\n",local_ip);
   } else {
-    g_printerr("Error: Could not get local ip\n");
+    g_printerr("Could not get local ip\n");
     return -1;
   }
 
