@@ -20,6 +20,26 @@
 #include <sys/socket.h>
 #include <view.h>
 
+FILE *log_file = NULL;
+
+static void log_info_handler(const gchar* string){
+	if(log_file){
+		fprintf(log_file, "INFO: %s", string);
+		fflush(log_file);
+	}
+	fputs(string, stdout);
+	fflush(stdout);
+}
+
+static void log_err_handler(const gchar* string){
+	if(log_file){
+		fprintf(log_file, "ERROR: %s", string);
+		fflush(log_file);
+	}
+	fputs(string, stdout);
+	fflush(stdout);
+}
+
 GstElement *init_producer() {
   GstElement *pipeline, *source, *convert, *encoder, *rtp, *udpsink,
       *capsfilter;
@@ -214,6 +234,14 @@ int main(int argc, char *argv[]) {
   char local_ip[64] = {0};
   int neighbor_count = 0;
   MeshNeighbor neighbors[MESH_MAX_NEIGHBORS];
+
+  log_file = fopen("/var/log/meshvision.log", "w");
+  if(!log_file){
+	g_printerr("Failed to open log file\n");
+  }
+
+  g_set_print_handler(log_info_handler);
+  g_set_printerr_handler(log_err_handler);
 
   // Initialize GStreamer & Gtk
   gst_init(&argc, &argv);
