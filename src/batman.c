@@ -100,8 +100,10 @@ int fetch_mesh_neighbors(MeshNeighbor neighbors_out[]) {
         // check for duplicate nodes
         int found = 0;
         for (int i = 0; i < count; i++) {
-          if (strcmp(mac_ptr, neighbors_out[i].mac) == 0)
+          if (strcmp(mac_ptr, neighbors_out[i].mac) == 0){
             found = 1;
+	    break;
+	  }
         }
         if (found == 1) continue;
 
