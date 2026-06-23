@@ -36,7 +36,8 @@ static gboolean resolve_ip_from_mac(const char *mac_addr, char *ip_out,
     char token3[32] = {0};
     char token4[32] = {0};
 
-    if (sscanf(line, "%31s %31s %31s %31s", token1, token2, token3, token4) >= 3) {
+    if (sscanf(line, "%31s %31s %31s %31s", token1, token2, token3, token4) >=
+        3) {
       char *ip_ptr = token1;
       char *mac_ptr = token2;
       if (strcmp(token1, "*") == 0) {
@@ -95,6 +96,15 @@ int fetch_mesh_neighbors(MeshNeighbor neighbors_out[]) {
       }
 
       if (strlen(mac_ptr) == 17 && mac_ptr[2] == ':') {
+
+        // check for duplicate nodes
+        int found = 0;
+        for (int i = 0; i < count; i++) {
+          if (strcmp(mac_ptr, neighbors_out[i].mac) == 0)
+            found = 1;
+        }
+        if (found == 1) continue;
+
         g_strlcpy(orig_mac, mac_ptr, sizeof(orig_mac));
 
         char *clean_tq = g_strdelimit(tq_ptr, "()", ' ');
