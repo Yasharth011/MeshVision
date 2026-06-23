@@ -2,6 +2,6 @@
 Type=Application
 Name=MeshVision
 Comment=Application for Mesh Based Video Streaming
-Exec=bash -c "sleep 5 && sudo -E /usr/local/bin/meshvision"
+Exec=bash -c "sleep 30; sudo timeout 10 arp-scan --interface=bat0:avahi --localnet > /dev/null; sudo -E /usr/local/bin/meshvision"
 Terminal=false
 StartupNotify=true
